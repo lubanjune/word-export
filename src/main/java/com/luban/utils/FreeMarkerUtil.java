@@ -3,9 +3,9 @@ package com.luban.utils;
 import com.google.common.collect.Lists;
 import com.luban.configration.RemoteTemplateLoader;
 import com.luban.entity.UserAvatar;
+import fr.opensagres.odfdom.converter.core.utils.StringUtils;
 import fr.opensagres.xdocreport.core.document.SyntaxKind;
 import fr.opensagres.xdocreport.document.IXDocReport;
-import fr.opensagres.xdocreport.document.images.ByteArrayImageProvider;
 import fr.opensagres.xdocreport.document.images.FileImageProvider;
 import fr.opensagres.xdocreport.document.registry.XDocReportRegistry;
 import fr.opensagres.xdocreport.template.IContext;
@@ -20,8 +20,11 @@ import org.springframework.web.util.HtmlUtils;
 
 import javax.servlet.http.HttpServletResponse;
 import java.io.*;
+import java.net.URL;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 public class FreeMarkerUtil {
 
@@ -126,6 +129,66 @@ public class FreeMarkerUtil {
             log.info("生成纪要文件发生异常：<{}>", e.getMessage());
         }
 
+    }
+
+    public static File createXmlDocLocalUrl(Map<String, Object> dataMap, String templateUrl, String zipUrl) {
+
+        try {
+            //获取临时文件路径前缀
+            String prefix = getTempFileUrl(null);
+            //获取远程xml模板
+            Configuration configuration = new Configuration(Configuration.VERSION_2_3_28);
+            configuration.setDefaultEncoding("UTF-8");
+            String url = templateUrl.substring(0, templateUrl.lastIndexOf("/"));
+            String name = templateUrl.substring(templateUrl.lastIndexOf("/"));
+            RemoteTemplateLoader templateLoader = new RemoteTemplateLoader(url);
+            configuration.setTemplateLoader(templateLoader);
+            Template template = configuration.getTemplate(name, "UTF-8");
+            //生成本地xml
+            File localXmlFile = new File(prefix + ".xml");
+            FileOutputStream localXmlOut = new FileOutputStream(localXmlFile);
+            Writer w = new BufferedWriter(new OutputStreamWriter(localXmlOut), 1024);
+            template.process(dataMap, w);
+            localXmlOut.close();
+            w.close();
+            //根据远程xml和远程zip文件将本地xml转换成docx
+            URL zip = new URL(zipUrl);
+            InputStream remoteZipInput = zip.openConnection().getInputStream();
+            ZipInputStream zipInputStream = ZipUtils.wrapZipInputStream(remoteZipInput);
+
+            File localDocxFile = new File(prefix + ".docx");
+            FileOutputStream localDocxOutput = new FileOutputStream(localDocxFile);
+            ZipOutputStream zipOutputStream = ZipUtils.wrapZipOutputStream(localDocxOutput);
+
+            FileInputStream localXmlInput = new FileInputStream(localXmlFile);
+
+            ZipUtils.replaceItem(zipInputStream, zipOutputStream, localXmlInput);
+            localDocxOutput.close();
+            remoteZipInput.close();
+
+            localXmlFile.delete();
+
+            return localDocxFile;
+        } catch (Exception e) {
+            e.printStackTrace();
+            log.info("生成word文档发生异常<{}>", e.getMessage());
+        }
+
+        return null;
+    }
+
+    public static String getTempFileUrl(String name) {
+
+        String tempPath = System.getProperty("java.io.tmpdir");
+        if (!tempPath.endsWith("/")) {
+            tempPath = tempPath + "/";
+        }
+
+        if (StringUtils.isEmpty(name)) {
+            name = "converttemp" + System.currentTimeMillis();
+        }
+
+        return tempPath + name;
     }
 
     public static void main(String[] args) {
